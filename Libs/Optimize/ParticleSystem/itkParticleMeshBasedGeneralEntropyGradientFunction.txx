@@ -24,6 +24,8 @@ void
 ParticleMeshBasedGeneralEntropyGradientFunction<VDimension>
 ::ComputeUpdates(const ParticleSystemType *c)
 {
+    std::cout << *m_ShapeData << std::endl;
+
     num_dims = m_ShapeData->rows();
     num_samples = m_ShapeData->cols();
 

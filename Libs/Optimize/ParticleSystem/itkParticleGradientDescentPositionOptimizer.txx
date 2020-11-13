@@ -163,6 +163,7 @@ namespace itk
 
             double newenergy, gradmag;
             while (true) {
+
               // Step A scale the projected gradient by the current time step
               VectorType gradient = original_gradient_projectedOntoTangentSpace * m_TimeSteps[dom][k];
 
@@ -220,7 +221,7 @@ namespace itk
 
       if (m_verbosity > 2)
       {
-        std::cout << m_NumberOfIterations << ". " << msElapsed << "ms";
+        //std::cout << m_NumberOfIterations << ". " << msElapsed << "ms";
 #ifdef LOG_MEMORY_USAGE
         double vmUsage, residentSet;
         process_mem_usage(vmUsage, residentSet);
