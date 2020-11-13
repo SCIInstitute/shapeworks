@@ -214,7 +214,7 @@ public:
 
     void PrintMatrix()
     {
-      std::cout << std::endl;
+      std::cout << std::endl << "Matrix start ---------------" << std::endl;
       for (unsigned int r = 0; r < this->rows(); r++)
         {
         for (unsigned int c = 0; c < this->cols(); c++)
