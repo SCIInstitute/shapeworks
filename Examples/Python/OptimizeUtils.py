@@ -19,7 +19,10 @@ def get_parameter_text(parameterKey,parameterValue,domains_per_shape):
     return text
      
 def get_attribute_scales_text(use_normals,normal_weight,domains_per_shape):
-
+    if(type(use_normals) is not list):
+        use_normals  = list([use_normals])
+    if(type(normal_weight) is not list):
+        normal_weight  = list([normal_weight])
     text = "\n"
     for i in range(domains_per_shape):
 
@@ -202,6 +205,8 @@ def create_SWRun_fixed_domains(xmlfilename, inDataFiles, parameterDictionary, ou
 
 def runShapeWorksOptimize(parentDir, inDataFiles, parameterDictionary):
     numP = parameterDictionary['number_of_particles']
+    numP = str(numP)
+    numP = numP.replace('[',"").replace(']',"").replace(",","").replace(" ","_")
     outDir = parentDir + '/' + str(numP) + '/'
     if not os.path.exists(outDir):
         os.makedirs(outDir)
