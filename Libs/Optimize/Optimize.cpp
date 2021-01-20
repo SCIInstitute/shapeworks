@@ -26,8 +26,14 @@
 #include "ParticleSystem/itkParticleImplicitSurfaceDomain.h"
 #include "ParticleSystem/object_reader.h"
 #include "ParticleSystem/object_writer.h"
+#include "OptimizeParameterFile.h"
 
 #include "Optimize.h"
+
+// pybind
+#include <pybind11/embed.h>
+
+namespace py = pybind11;
 
 namespace shapeworks {
 
@@ -40,6 +46,28 @@ Optimize::Optimize()
 //---------------------------------------------------------------------------
 bool Optimize::Run()
 {
+  if (this->m_python_filename != "") {
+    py::initialize_interpreter();
+
+    auto dir = this->m_python_filename;
+
+    auto filename = dir.substr(dir.find_last_of("/") + 1);
+    std::cerr << "Running Python File: " << filename << "\n";
+    filename = filename.substr(0, filename.length() - 3); // remove .py
+    dir = dir.substr(0, dir.find_last_of("/") + 1);
+
+    py::module sys = py::module::import("sys");
+    py::print(sys.attr("path"));
+    sys.attr("path").attr("insert")(1, dir);
+    py::print(sys.attr("path"));
+
+    py::module module = py::module::import(filename.c_str());
+    py::object result = module.attr("run")(this);
+
+  }
+
+
+
   // sanity check
   if (this->m_domains_per_shape != this->m_number_of_particles.size()) {
     std::cerr <<
@@ -79,7 +107,7 @@ bool Optimize::Run()
 
   m_disable_procrustes = true;
 
-  std::vector<unsigned int> final_number_of_particles = this->m_number_of_particles;
+  std::vector<int> final_number_of_particles = this->m_number_of_particles;
   int scale = 1;
   if (this->m_use_shape_statistics_after > 0) {
     this->m_use_shape_statistics_in_init = false;
@@ -149,6 +177,12 @@ bool Optimize::Run()
   }
 
   this->UpdateExportablePoints();
+
+  if (this->m_python_filename != "") {
+      this->m_iter_callback = nullptr;
+      py::finalize_interpreter();
+  }
+
   return true;
 }
 
@@ -301,13 +335,13 @@ shapeworks::DomainType Optimize::GetDomainType()
 }
 
 //---------------------------------------------------------------------------
-void Optimize::SetNumberOfParticles(std::vector<unsigned int> number_of_particles)
+void Optimize::SetNumberOfParticles(std::vector<int> number_of_particles)
 {
   this->m_number_of_particles = number_of_particles;
 }
 
 //---------------------------------------------------------------------------
-std::vector<unsigned int> Optimize::GetNumberOfParticles()
+std::vector<int> Optimize::GetNumberOfParticles()
 {
   return this->m_number_of_particles;
 }
@@ -990,6 +1024,10 @@ void Optimize::AbortOptimization()
 //---------------------------------------------------------------------------
 void Optimize::IterateCallback(itk::Object*, const itk::EventObject&)
 {
+  if (this->m_iter_callback) {
+    this->m_iter_callback();
+  }
+
   this->m_iteration_count++;
 
   if (this->GetShowVisualizer()) {
@@ -1464,57 +1502,55 @@ void Optimize::WritePointFilesWithFeatures(std::string iter_prefix)
       throw 1;
     }
 
-    // Only run the following code if we are dealing with ImplicitSurfaceDomains
-    const itk::ParticleImplicitSurfaceDomain<float>* domain
-      = dynamic_cast <const itk::ParticleImplicitSurfaceDomain<float>*> (m_sampler->GetParticleSystem()
-        ->GetDomain(i));
-    if (domain) {
-      std::vector<float> fVals;
+    std::vector<float> fVals;
 
-      for (unsigned int j = 0; j < m_sampler->GetParticleSystem()->GetNumberOfParticles(i); j++) {
-        PointType pos = m_sampler->GetParticleSystem()->GetPosition(j, i);
-        PointType wpos = m_sampler->GetParticleSystem()->GetTransformedPosition(j, i);
+    for (unsigned int j = 0; j < m_sampler->GetParticleSystem()->GetNumberOfParticles(i); j++) {
+      PointType pos = m_sampler->GetParticleSystem()->GetPosition(j, i);
+      PointType wpos = m_sampler->GetParticleSystem()->GetTransformedPosition(j, i);
 
-        for (unsigned int k = 0; k < 3; k++) {
-          outw << wpos[k] << " ";
-        }
+      for (unsigned int k = 0; k < 3; k++) {
+        outw << wpos[k] << " ";
+      }
 
-        if (m_use_normals[i % m_domains_per_shape]) {
-          vnl_vector_fixed<float, DIMENSION> pG = domain->SampleNormalAtPoint(pos);
-          VectorType pN;
-          pN[0] = pG[0];
-          pN[1] = pG[1];
-          pN[2] = pG[2];
-          pN = m_sampler->GetParticleSystem()->TransformVector(pN,
-                                                               m_sampler->GetParticleSystem()->GetTransform(
-                                                                 i) *
-                                                               m_sampler->GetParticleSystem()->GetPrefixTransform(
-                                                                 i));
-          outw << pN[0] << " " << pN[1] << " " << pN[2] << " ";
-        }
+      if (m_use_normals[i % m_domains_per_shape]) {
+        vnl_vector_fixed<float, DIMENSION> pG = m_sampler->GetParticleSystem()->GetDomain(i)->SampleNormalAtPoint(pos, j);
+        VectorType pN;
+        pN[0] = pG[0];
+        pN[1] = pG[1];
+        pN[2] = pG[2];
+        pN = m_sampler->GetParticleSystem()->TransformVector(pN,
+                                                             m_sampler->GetParticleSystem()->GetTransform(
+                                                               i) *
+                                                             m_sampler->GetParticleSystem()->GetPrefixTransform(
+                                                               i));
+        outw << pN[0] << " " << pN[1] << " " << pN[2] << " ";
+      }
 
-        if (m_attributes_per_domain.size() > 0) {
-          if (m_attributes_per_domain[i % m_domains_per_shape] > 0) {
-            point pt;
-            pt.clear();
-            pt[0] = pos[0];
-            pt[1] = pos[1];
-            pt[2] = pos[2];
-            fVals.clear();
-            if (m_mesh_based_attributes) {
-              domain->GetMesh()->GetFeatureValues(pt, fVals);
-            }
-            for (unsigned int k = 0; k < m_attributes_per_domain[i % m_domains_per_shape]; k++) {
-              outw << fVals[k] << " ";
-            }
+      // Only run the following code if we are dealing with ImplicitSurfaceDomains
+      const itk::ParticleImplicitSurfaceDomain<float>* domain
+              = dynamic_cast <const itk::ParticleImplicitSurfaceDomain<float>*> (m_sampler->GetParticleSystem()
+                      ->GetDomain(i));
+      if (domain && m_attributes_per_domain.size() > 0) {
+        if (m_attributes_per_domain[i % m_domains_per_shape] > 0) {
+          point pt;
+          pt.clear();
+          pt[0] = pos[0];
+          pt[1] = pos[1];
+          pt[2] = pos[2];
+          fVals.clear();
+          if (m_mesh_based_attributes) {
+            domain->GetMesh()->GetFeatureValues(pt, fVals);
+          }
+          for (unsigned int k = 0; k < m_attributes_per_domain[i % m_domains_per_shape]; k++) {
+            outw << fVals[k] << " ";
           }
         }
+      }
 
-        outw << std::endl;
+      outw << std::endl;
 
-        counter++;
-      }      // end for points
-    }
+      counter++;
+    }      // end for points
 
     outw.close();
     this->PrintDoneMessage(1);
@@ -2121,6 +2157,37 @@ void Optimize::PrintDoneMessage(unsigned int vlevel) const
 }
 
 //---------------------------------------------------------------------------
+bool Optimize::LoadParameterFile(std::string filename)
+{
+  OptimizeParameterFile param;
+  if (!param.load_parameter_file(filename, this)) {
+    std::cerr << "Error reading parameter file\n";
+    return false;
+  }
+  return true;
+}
+
+//---------------------------------------------------------------------------
+MatrixContainer Optimize::GetParticleSystem()
+{
+  
+  auto shape_matrix = m_sampler->GetGeneralShapeMatrix();
+
+  MatrixType matrix;
+  matrix.resize(shape_matrix->rows(), shape_matrix->cols());
+
+  for (int i = 0; i < shape_matrix->rows(); i++) {
+    for (int j = 0; j < shape_matrix->cols(); j++) {
+      matrix(i, j) = shape_matrix->get(i, j);
+    }
+  }
+
+  MatrixContainer container;
+  container.matrix_ = matrix;
+  return container;
+}
+
+//---------------------------------------------------------------------------
 std::string Optimize::GetCheckpointDir()
 {
   int num_digits = std::to_string(abs(m_total_iterations)).length();
@@ -2152,4 +2219,9 @@ std::string Optimize::GetCheckpointDir()
   return out_path;
 }
 
+//---------------------------------------------------------------------------
+void Optimize::SetPythonFile(std::string filename)
+{
+  this->m_python_filename = filename;
+}
 }

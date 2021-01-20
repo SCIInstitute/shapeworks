@@ -152,10 +152,11 @@ ParticleSystem<VDimension>
   if (m_DomainFlags[d] == false) {
       // debugg
       //std::cout << "d" << d << " before apply " << m_Positions[d]->operator[](m_IndexCounters[d]);
-    m_Domains[d]->ApplyConstraints( m_Positions[d]->operator[](m_IndexCounters[d]));
+    const auto idx = m_IndexCounters[d];
+    m_Domains[d]->ApplyConstraints( m_Positions[d]->operator[](idx), idx);
       // debugg
       //std::cout << " after apply " << m_Positions[d]->operator[](m_IndexCounters[d]) << std::endl;
-    m_Neighborhoods[d]->AddPosition( m_Positions[d]->operator[](m_IndexCounters[d]), m_IndexCounters[d], threadId);
+    m_Neighborhoods[d]->AddPosition( m_Positions[d]->operator[](idx), idx, threadId);
   }
 
   // Increase the FixedParticleFlag list size if necessary.
@@ -189,7 +190,7 @@ ParticleSystem<VDimension>
 
       // Debuggg
       //std::cout << "SynchronizePositions Apply constraints " << m_Positions[d]->operator[](k);
-      m_Domains[d]->ApplyConstraints( m_Positions[d]->operator[](k));
+      m_Domains[d]->ApplyConstraints( m_Positions[d]->operator[](k), -1);
       // Debuggg
       //std::cout << " updated " << m_Positions[d]->operator[](k) << std::endl;
 
@@ -282,37 +283,77 @@ void ParticleSystem<VDimension>::AdvancedAllParticleSplitting(double epsilon, co
 
   for (int n = 0; n < m_DomainsPerShape; n++) {
 
+
       std::vector<std::vector<PointType> > lists;
       std::vector<size_t> dom_inds;
 
-      for (size_t domain = n; domain < num_doms; domain+=m_DomainsPerShape) {
-        std::vector<PointType> list;
-        typename PointContainerType::ConstIterator endIt = GetPositions(domain)->GetEnd();
-        for (typename PointContainerType::ConstIterator it = GetPositions(domain)->GetBegin();
-             it != endIt; it++) { list.push_back(*it); }
-        lists.push_back(list);
-        dom_inds.push_back(domain);
-        // Debuggg
-        /*
-        std::cout << "Domain " << domain << " Curr Pos ";
-        for(size_t i = 0; i < list.size(); i++)
-            std::cout << list[i] << " ";
-        std::cout << " List size " << list.size() << std::endl;
-        */
-      }
+  for (size_t domain = 0; domain < num_doms; domain++) {
+    std::vector<PointType> list;
+    for (auto k=0; k<GetPositions(domain)->GetSize(); k++) {
+      list.push_back(GetPositions(domain)->Get(k));
+    }
+    lists.push_back(list);
+    // Debuggg
+    /*
+    std::cout << "Domain " << domain << " Curr Pos ";
+    for(size_t i = 0; i < list.size(); i++)
+        std::cout << list[i] << " ";
+    std::cout << " List size " << list.size() << std::endl;
+    */
+  }
 
-      /*
+  
+  std::vector< std::vector<vnl_vector<double> > > lists;
+
+  for (int i = 0; i < n; i++) {
+    int d = i % m_domains_per_shape;
+    if (m_sampler->GetParticleSystem()->GetNumberOfParticles(i) < m_number_of_particles[d]) {
+      std::vector<vnl_vector<double> > list = *(m_sampler->GetParticleSystem()->GetPositions(i));
+      std::cout << "list_size " << list.size() << std::endl;
+      //m_sampler->GetParticleSystem()->SplitAllParticlesInDomain(random, epsilon, i, 0);
+    }
+  }
+  
+
+  if (lists.size() > 0) {
+    for (size_t i = 0; i < lists[0].size(); i++) {
+      // While the random vector updated violates plane constraints
+      // Breaks when it doesn't violate for any domain
+      std::vector<PointType> newposs_good;
+
+
+      
       std::vector< std::vector<vnl_vector<double> > > lists;
 
-      for (int i = 0; i < n; i++) {
-        int d = i % m_domains_per_shape;
-        if (m_sampler->GetParticleSystem()->GetNumberOfParticles(i) < m_number_of_particles[d]) {
-          std::vector<vnl_vector<double> > list = *(m_sampler->GetParticleSystem()->GetPositions(i));
-          std::cout << "list_size " << list.size() << std::endl;
-          //m_sampler->GetParticleSystem()->SplitAllParticlesInDomain(random, epsilon, i, 0);
+        for (int i = 0; i < 3; i++) {
+          random[i] = distribution(this->m_rand);
         }
-      }
-      */
+        double norm = random.magnitude();
+        random /= norm;
+
+        // Check where the update will take us after applying it to the point and th constraints.
+        newposs_good.clear();
+        bool good = true; // flag to check if the new update violates in any domain
+        for (size_t j = 0; j < lists.size(); j++) {
+          // Add epsilon times random direction to existing point and apply domain
+          // constraints to generate a new particle position.
+          PointType newpos;
+          for (unsigned int k = 0; k < 3; k++) {
+            newpos[k] = lists[j][i][k] + epsilon * random[k] / 5.;
+          }
+          // Go to surface
+          if (!this->m_DomainFlags[j] &&
+              !this->GetDomain(j)->GetConstraints()->IsAnyViolated(newpos)) {
+            this->GetDomain(j)->ApplyConstraints(newpos, -1);
+          }
+          newposs_good.push_back(newpos);
+          // Check for plane constraint violations
+          if (this->GetDomain(j)->GetConstraints()->IsAnyViolated(newpos)) {
+            good = false;
+            break;
+          }
+        }
+
 
       if (lists.size() > 0 && lists[0].size() < number_of_particles[n]) {
         for (size_t i = 0; i < lists[0].size(); i++) {
