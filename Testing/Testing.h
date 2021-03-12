@@ -4,3 +4,4 @@
 
 void shapeworksEnvSetup();
 void pythonEnvSetup();
+void useCaseEnvSetup();

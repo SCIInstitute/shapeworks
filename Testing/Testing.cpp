@@ -143,3 +143,13 @@ void pythonEnvSetup()
   auto pythonTestsDir(std::string(TEST_DATA_DIR) + "/../PythonTests");
   chdir(pythonTestsDir.c_str());
 }
+
+void useCaseEnvSetup()
+{
+  // set paths to find shapeworks python module
+  shapeworksEnvSetup();
+
+  // change to the Examples/Python directory
+  auto useCaseDir(std::string(TEST_DATA_DIR) + "/../../Examples/Python");
+  chdir(useCaseDir.c_str());
+}

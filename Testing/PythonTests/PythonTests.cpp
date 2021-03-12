@@ -12,12 +12,12 @@ TEST(pythonTests, gradientInterpolatorTest)
 {
   ASSERT_FALSE(system("python gradientinterp.py"));
 }
-  
+
 TEST(pythonTests, infoTest)
 {
   ASSERT_FALSE(system("python info.py"));
 }
-  
+
 TEST(pythonTests, copyTest)
 {
   ASSERT_FALSE(system("python copy.py"));
